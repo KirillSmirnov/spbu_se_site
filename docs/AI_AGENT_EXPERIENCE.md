@@ -277,3 +277,28 @@ times out. Have a log-capture strategy ready. Never assume success.
 1. "How will I diagnose it?" (capture stderr, save partial output to file)
 1. "What's my fallback?" (increase timeout, use different flag directly)
 1. Check the tool is in PATH / available via `uv run` before running
+
+## Deployment architecture
+
+**When:** Deploying or debugging production/staging servers.
+
+**Production deployment (bare-metal, NOT Docker):**
+
+- Server path: `/srv/spbu_se_site/repo/src`
+- Virtualenv: `/srv/spbu_se_site/venv/`
+- systemd service runs: `uwsgi --ini flask_se.ini`
+- `flask_se.ini` exists on the server, **not in git** — it was manually created
+- CI webhooks trigger `git pull && systemctl restart` on the server
+- `current` branch is the production branch
+
+**Key files for uWSGI:**
+
+- `src/app.ini` — in git, used by Docker, references `wsgi.py`
+- `flask_se.ini` — on server only, NOT in git, references `wsgi.py`
+- `src/wsgi.py` — must contain `from flask_se import app` (gutted in commit 1f2e63c)
+
+**The run_uwsgi.py rename bug (commit 9ae5b3e, May 2023):**
+
+`run_uwsgi.py` was renamed to `wsgi.py` but `app.ini` was never updated. This broke Docker-based deployment. The systemd service on the server was unaffected because it uses `flask_se.ini` (not in git).
+
+**Lesson:** When renaming files referenced by config, always grep for all references to the old name. CI should validate the WSGI entry point can be imported.

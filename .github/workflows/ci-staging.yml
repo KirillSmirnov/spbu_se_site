@@ -46,3 +46,7 @@ jobs:
       - run: uv run pytest
         env:
           PYTHONPATH: src
+
+      - name: Verify WSGI app loads
+        working-directory: src
+        run: uv run python -c "from wsgi import app; print('WSGI app OK')"
