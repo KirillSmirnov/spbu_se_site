@@ -286,16 +286,54 @@ times out. Have a log-capture strategy ready. Never assume success.
 
 - Server path: `/srv/spbu_se_site/repo/src`
 - Virtualenv: `/srv/spbu_se_site/venv/`
-- systemd service runs: `uwsgi --ini flask_se.ini`
-- `flask_se.ini` exists on the server, **not in git** — it was manually created
+- systemd service runs: `gunicorn -c gunicorn.conf.py wsgi:app`
+- `gunicorn.conf.py` exists on the server, **not in git** — it was manually created
 - CI webhooks trigger `git pull && systemctl restart` on the server
 - `current` branch is the production branch
 
-**Key files for uWSGI:**
+**Key files for Gunicorn (switched from uWSGI in 2026-07):**
 
-- `src/app.ini` — in git, used by Docker, references `wsgi.py`
-- `flask_se.ini` — on server only, NOT in git, references `wsgi.py`
-- `src/wsgi.py` — must contain `from flask_se import app` (gutted in commit 1f2e63c)
+- `src/gunicorn.conf.py` — in git, used by Docker and as reference for server config
+- `gunicorn.conf.py` — on server only, NOT in git
+- `src/wsgi.py` — must contain `from flask_se import app`
+
+**Why Gunicorn over uWSGI:**
+
+- Pure Python — no C compilation (`gcc`, `python3-dev`) required
+- Actively maintained — uWSGI has been in maintenance mode since 2022
+- Simpler config — fewer knobs, sane defaults
+- Flask's recommended WSGI server
+
+**Gunicorn config (`gunicorn.conf.py`):**
+
+```python
+import multiprocessing
+bind = "0.0.0.0:8000"
+workers = multiprocessing.cpu_count() * 2 + 1
+threads = 2
+timeout = 120
+accesslog = "-"
+errorlog = "-"
+loglevel = "info"
+```
+
+**systemd service file for server:**
+
+```ini
+[Unit]
+Description=SE Site Gunicorn
+After=network.target
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/srv/spbu_se_site/repo/src
+ExecStart=/srv/spbu_se_site/venv/bin/gunicorn -c gunicorn.conf.py wsgi:app
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
 
 **The run_uwsgi.py rename bug (commit 9ae5b3e, May 2023):**
 
