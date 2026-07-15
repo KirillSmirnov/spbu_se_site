@@ -139,6 +139,21 @@ This applies to all problem-solving modes (planning, troubleshooting, ad-hoc sug
 
 If the existing tool covers the need, use it. If not, prefer the simplest addition that closes the gap.
 
+### Restore-then-evaluate
+
+When fixing broken config or dependencies, run this 3-question check **before** restoring:
+
+1. Is this tool/dep still maintained?
+2. Is there a simpler alternative?
+3. Have we patched this before?
+
+If any answer is "no"/"yes"/"yes" — evaluate replacement before restoring. Examples:
+
+- **uWSGI broken** → maintenance mode since 2022, simpler alternative exists (Gunicorn), patched before → switch, don't restore
+- **Whoosh EmptyIndexError** → patched 4 times across sessions, replacement (FTS5) existed → replace, don't xfail again
+
+This prevents the "fix-in-place" trap where restoring broken config defers the real decision.
+
 ### Mid-sprint violation
 
 If architecture-first or doc-first step was skipped, create a `TODO.md` Backlog entry. Fixing it (document decision, rearrange code if needed) is a **must-have** before the next feature.

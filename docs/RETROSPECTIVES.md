@@ -555,3 +555,57 @@ Three branches merged: `docs/knowledge-reorg`, `fix/whoosh-cache`, `docs/audit-f
 - .opencode/skills/: 15/15 stubs (was 11/15)
 - Hardcoded metrics removed from: README, DESIGN_DECISIONS, CODE_ISSUES, TESTING
 - Docs verified against code: ARCHITECTURE (module map), SCHEMA (all fields), API_REFERENCE (all routes), DESIGN_DECISIONS (Python version), TESTING (xfail table)
+
+### Retrospective — 2026-07-15: deployment fix, uWSGI→Gunicorn migration
+
+**Branch:** `fix/deploy-uwsgi-wsgi-entrypoint` (3 commits, 9 files, +99/-14 lines)
+**Previous staging HEAD:** `83a1502`
+**Status:** Committed locally, not pushed (no GitHub credentials in this environment)
+
+**Changes across 2 sessions:**
+
+| Commit | What |
+|--------|------|
+| `fe370b3` | Restored `from flask_se import app` in `wsgi.py` (gutted in Flask migration `1f2e63c`), fixed `app.ini` wsgi-file reference (`run_uwsgi.py` → `wsgi.py`, broken since `9ae5b3e` May 2023 rename), updated Dockerfile to Python 3.13, added uWSGI dep, added WSGI smoke test to CI |
+| `737d093` | Replaced uWSGI with Gunicorn — deleted `app.ini`, created `gunicorn.conf.py` (workers=cpu\*2+1, threads=2), updated Dockerfile CMD, swapped uWSGI for gunicorn in pyproject.toml, regenerated lockfile |
+| `9f8538f` | Updated `docs/AI_AGENT_EXPERIENCE.md` deployment section with Gunicorn config and systemd service template |
+
+**Gaps found:**
+
+| Gap | Type | Fix |
+|-----|------|-----|
+| `wsgi.py` gutted during Flask 3.1.3 migration (`1f2e63c`) — no `from flask_se import app` import | CI gap — no smoke test existed to catch this | Added WSGI import smoke test to `ci-staging.yml` |
+| `app.ini` wsgi-file reference stale since May 2023 rename (`9ae5b3e`) | CI gap — no config validation in CI | Documented in `AI_AGENT_EXPERIENCE.md` as lesson; CI smoke test now catches broken entry point |
+| `Dockerfile` used Python 3.9 while CI runs 3.13 | Config drift — Dockerfile not exercised in CI | Updated to Python 3.13 |
+| uWSGI has C compilation dependency, maintenance mode since 2022 | Tech debt — no action needed until deployment fix surfaced it | Switched to Gunicorn (pure Python, actively maintained) |
+| `flask_se.ini` on server not in git — server config unknown to CI | Missing convention — server config drift risk | Documented in `AI_AGENT_EXPERIENCE.md` with systemd service template |
+| Could not push — no GitHub credentials in this environment | Environment limitation | Documented in session handoff; user must push manually |
+
+**Pattern recurrence**: **YES — "context loss between sessions" in 3rd consecutive retro** (2026-07-12, 2026-07-10, now 2026-07-15). Previous session restored uWSGI without questioning it. This session had to re-investigate the same problem and switch to Gunicorn anyway. The "fix-in-place" pattern is new — not previously tracked.
+
+**What went well:**
+
+- Deployment root cause traced correctly: `run_uwsgi.py` → `wsgi.py` rename in `9ae5b3e` broke `app.ini` reference, then Flask migration gutted `wsgi.py` entirely — two independent failures, found in one investigation
+- Gunicorn switch was clean — drop-in replacement, zero code changes needed beyond config
+- WSGI smoke test in CI catches future entry point breakage at lint stage
+- `AI_AGENT_EXPERIENCE.md` deployment section now has complete server config template (gunicorn.conf.py, systemd service)
+
+**What went wrong:**
+
+- Two separate commits did the same work partially: first added uWSGI, then immediately replaced it with Gunicorn — the first commit's uWSGI addition was wasted effort
+- No pre-commit or pre-push verification was run before committing (pre-push hook requires credentials to push, so was skipped)
+- Restore-then-evaluate was not applied — would have saved one commit
+
+**Root causes:**
+
+1. **Context loss between sessions** — previous session fixed wsgi.py + added uWSGI dep without questioning whether uWSGI was the right choice. This session switched to Gunicorn, making the uWSGI addition a wasted commit
+2. **No tool evaluation before restore** — the deployment investigation correctly identified the broken config but defaulted to fixing-in-place (uWSGI) rather than evaluating alternatives
+
+**Lesson:** Added "Restore-then-evaluate" rule to `docs/DEVELOPMENT_PROCESS.md` — 3-question check (maintained? simpler alternative? patched before?) must run before restoring broken config/deps.
+
+**State at handoff:**
+
+- Branch: `fix/deploy-uwsgi-wsgi-entrypoint` — 3 commits, NOT pushed
+- Tests: WSGI smoke test added to CI; full test suite unaffected (no Python code changes beyond `wsgi.py` import)
+- Pre-existing CI failures: actionlint (shellcheck in deploy workflows), powershell (Windows-only hook) — NOT from our changes
+- User must: push branch, create PR to staging, wait for CI green, squash-merge, then update server systemd service to use gunicorn
